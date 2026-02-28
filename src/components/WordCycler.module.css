@@ -55,7 +55,7 @@
   bottom: 32px;
   left: 0;
   right: 0;
-  display: flex;
+  display: none;
   justify-content: center;
   gap: 32px;
   z-index: 20;

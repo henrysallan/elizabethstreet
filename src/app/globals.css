@@ -27,3 +27,12 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+/* Leva panel overrides */
+[id="leva__root"] > div {
+  width: 380px !important;
+}
+
+[id="leva__root"] label {
+  color: #fff !important;
+}
