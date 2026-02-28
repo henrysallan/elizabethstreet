@@ -13,6 +13,7 @@ const GRID_LEVELS = [1, 3, 4, 5, 6, 7, 8];
 const START_DELAY = 600; // ms per word at the beginning
 const END_DELAY = 200;   // ms per word at full speed
 const GAP_MS = 20;       // blank gap between words (backward-masking interval)
+const PAUSE_MS = 250;    // duration of a (pause) token
 
 /** 1 char: highlight it. ≤4 chars: 2nd letter. Longer: 3rd letter. */
 function getHighlightIdx(word: string) {
@@ -32,7 +33,16 @@ export default function WordCycler() {
 
   const words = useMemo(() => {
     const t = text.trim();
-    return t.length > 0 ? t.split(/\s+/) : DEFAULT_TEXT.split(/\s+/);
+    const raw = t.length > 0 ? t : DEFAULT_TEXT;
+    // Split on whitespace but keep "(pause)" as a single token
+    return raw.split(/\s+/).reduce<string[]>((acc, w) => {
+      if (w.toLowerCase() === '(pause)') {
+        acc.push('(pause)');
+      } else if (w.length > 0) {
+        acc.push(w);
+      }
+      return acc;
+    }, []);
   }, [text]);
 
   const wordsRef = useRef(words);
@@ -81,11 +91,19 @@ export default function WordCycler() {
     // Show blank gap
     setVisible(false);
     timeoutRef.current = setTimeout(() => {
-      // Advance word and show it
+      // Advance word
       indexRef.current = (indexRef.current + 1) % wordsRef.current.length;
-      setIndex(indexRef.current);
-      setVisible(true);
-      timeoutRef.current = setTimeout(step, displayTime(indexRef.current));
+      const nextWord = wordsRef.current[indexRef.current];
+
+      if (nextWord === '(pause)') {
+        // Stay blank for the pause duration, then continue
+        setIndex(indexRef.current);
+        timeoutRef.current = setTimeout(step, PAUSE_MS);
+      } else {
+        setIndex(indexRef.current);
+        setVisible(true);
+        timeoutRef.current = setTimeout(step, displayTime(indexRef.current));
+      }
     }, GAP_MS);
   }, [displayTime]);
 
@@ -122,6 +140,11 @@ export default function WordCycler() {
           {Array.from({ length: totalCells }, (_, cellIdx) => {
             const word = getWord(startWordIdx + cellIdx);
             const isCenter = cellIdx === centerCell;
+
+            // (pause) tokens render as empty space
+            if (word === '(pause)') {
+              return <div key={cellIdx} className={styles.cell}>&nbsp;</div>;
+            }
 
             if (isCenter) {
               const midIdx = getHighlightIdx(word);
