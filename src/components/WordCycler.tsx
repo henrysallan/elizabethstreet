@@ -29,7 +29,10 @@ export default function WordCycler() {
   const indexRef = useRef(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const { text } = useControls({ text: { value: DEFAULT_TEXT, label: 'Text' } });
+  const { text, pauseLength } = useControls({
+    text: { value: DEFAULT_TEXT, label: 'Text' },
+    pauseLength: { value: PAUSE_MS, min: 50, max: 2000, step: 10, label: 'Pause Length (ms)' },
+  });
 
   const words = useMemo(() => {
     const t = text.trim();
@@ -87,6 +90,9 @@ export default function WordCycler() {
     return END_DELAY;
   }, []);
 
+  const pauseLengthRef = useRef(pauseLength);
+  pauseLengthRef.current = pauseLength;
+
   const step = useCallback(() => {
     // Show blank gap
     setVisible(false);
@@ -98,7 +104,7 @@ export default function WordCycler() {
       if (nextWord === '(pause)') {
         // Stay blank for the pause duration, then continue
         setIndex(indexRef.current);
-        timeoutRef.current = setTimeout(step, PAUSE_MS);
+        timeoutRef.current = setTimeout(step, pauseLengthRef.current);
       } else {
         setIndex(indexRef.current);
         setVisible(true);
