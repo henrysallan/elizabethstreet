@@ -4,15 +4,14 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useControls, Leva } from 'leva';
 import styles from './WordCycler.module.css';
 
-const DEFAULT_TEXT = `We are the opening of the aperture before the light has decided what it is. Capital as séance — a summoning architecture for work that refuses its own legibility. The construction of a dark corridor between what trembles at the threshold and what the market will only recognize in retrospect as having always been there. We move resources toward the unresolved image. Toward the practitioner whose output is less a product than a disturbance in the field — a fold in the surface where something leaks through from the adjacent possible. The fund is a tuning fork. The fund is the room the tuning fork is struck inside of. We are interested exclusively in the projects that cannot yet survive contact with language, that degrade the moment you build a deck about them, that only exist in full fidelity inside the fever of their own making. What we capitalize is the gap. The specific and unrepeatable gap between a person and the thing they are reaching toward in the dark. We have no thesis. We have a frequency.`;
+const DEFAULT_TEXT = `a creative era used to be ten years. today, it is six months. (pause) the faster time moves, the easier it is to see what moves with us. (pause) our human desires. (pause) the way I want to dance in a crowd with her. (pause) to hear a new sound. (pause) the music changes. i’ve been here before but the music was different and it felt like only a week ago. (pause) the years speed by. but I’ll be in a crowded room dancing the same way my dad did before me. (pause) so I invest in the room. (pause) yesterday’s song won’t be here tomorrow, but a song will be. (pause) so i need this room. (pause) Elizabeth Street Partners (pause) Elizabeth Street Partners (pause) Elizabeth Street Partners. (pause) elizabeth street partners invests in cultural evolution. the innate compulsion to progress taste and the ways we experience it..`;
 
 const GRID_LEVELS = [1, 3, 4, 5, 6, 7, 8];
 
-// RSVP timing: ~100ms display + ~20ms blank gap = 120ms SOA at full speed.
-// We start slow and ramp into RSVP range.
+// 300 WPM = 200ms per word. Ramp from slow to full speed over first 7 words.
 const START_DELAY = 600; // ms per word at the beginning
-const END_DELAY = 200;   // ms per word at full speed
-const GAP_MS = 20;       // blank gap between words (backward-masking interval)
+const END_DELAY = 125;   // ms per word at full speed (300 WPM)
+const RAMP_WORDS = 12;    // number of words to ramp over
 const PAUSE_MS = 250;    // duration of a (pause) token
 
 /** 1 char: highlight it. ≤4 chars: 2nd letter. Longer: 3rd letter. */
@@ -31,7 +30,7 @@ export default function WordCycler() {
 
   const { text, pauseLength } = useControls({
     text: { value: DEFAULT_TEXT, label: 'Text' },
-    pauseLength: { value: PAUSE_MS, min: 50, max: 2000, step: 10, label: 'Pause Length (ms)' },
+    pauseLength: { value: 930, min: 50, max: 2000, step: 10, label: 'Pause Length (ms)' },
   });
 
   const words = useMemo(() => {
@@ -81,36 +80,32 @@ export default function WordCycler() {
   const centerCell = Math.floor(totalCells / 2);
 
   const displayTime = useCallback((i: number) => {
-    // First 4 words: slow. Words 5–14: ramp down. 15+: full speed.
-    if (i < 4) return START_DELAY;
-    if (i < 14) {
-      const t = (i - 4) / 10; // 0 → 1 over 10 words
-      return START_DELAY + (END_DELAY - START_DELAY) * t;
-    }
-    return END_DELAY;
+    // Ramp from START_DELAY to END_DELAY over the first RAMP_WORDS words
+    if (i >= RAMP_WORDS) return END_DELAY;
+    const t = i / RAMP_WORDS; // 0 → 1
+    return START_DELAY + (END_DELAY - START_DELAY) * t;
   }, []);
 
   const pauseLengthRef = useRef(pauseLength);
   pauseLengthRef.current = pauseLength;
 
   const step = useCallback(() => {
-    // Show blank gap
-    setVisible(false);
-    timeoutRef.current = setTimeout(() => {
-      // Advance word
-      indexRef.current = (indexRef.current + 1) % wordsRef.current.length;
-      const nextWord = wordsRef.current[indexRef.current];
+    // Peek ahead: if the next word is a (pause), skip the blank gap
+    // and hold the current word on screen for the pause duration.
+    const nextIdx = (indexRef.current + 1) % wordsRef.current.length;
+    const nextWord = wordsRef.current[nextIdx];
 
-      if (nextWord === '(pause)') {
-        // Stay blank for the pause duration, then continue
-        setIndex(indexRef.current);
-        timeoutRef.current = setTimeout(step, pauseLengthRef.current);
-      } else {
-        setIndex(indexRef.current);
-        setVisible(true);
-        timeoutRef.current = setTimeout(step, displayTime(indexRef.current));
-      }
-    }, GAP_MS);
+    if (nextWord === '(pause)') {
+      indexRef.current = nextIdx;
+      // Keep visible — no flash
+      timeoutRef.current = setTimeout(step, pauseLengthRef.current);
+      return;
+    }
+
+    // Normal: swap word instantly, no blank gap
+    indexRef.current = nextIdx;
+    setIndex(indexRef.current);
+    timeoutRef.current = setTimeout(step, displayTime(indexRef.current));
   }, [displayTime]);
 
   useEffect(() => {

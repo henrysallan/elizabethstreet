@@ -242,15 +242,16 @@ export default function JpegFilter() {
   const rafRef = useRef(0);
 
   const controls = useControls('JPEG Loss', {
-    generations: { value: 6, min: 0, max: 40, step: 1, label: 'Generations' },
-    blockSize: { value: 8, min: 2, max: 32, step: 1, label: 'Block Size' },
-    blockStrength: { value: 0.4, min: 0, max: 1, step: 0.01, label: 'Block Strength' },
+    enabled: { value: false, label: 'Enabled' },
+    generations: { value: 0, min: 0, max: 40, step: 1, label: 'Generations' },
+    blockSize: { value: 2, min: 2, max: 32, step: 1, label: 'Block Size' },
+    blockStrength: { value: 0.13, min: 0, max: 1, step: 0.01, label: 'Block Strength' },
     chromaSub: { value: 0.5, min: 0, max: 1, step: 0.01, label: 'Chroma Subsample' },
     bandLevels: { value: 64, min: 4, max: 256, step: 1, label: 'Color Levels' },
     ringing: { value: 0.3, min: 0, max: 1, step: 0.01, label: 'Ringing' },
-    sharpness: { value: 0.4, min: 0, max: 2, step: 0.01, label: 'Sharpness' },
+    sharpness: { value: 1.74, min: 0, max: 2, step: 0.01, label: 'Sharpness' },
     brightnessDrift: { value: 0.3, min: -2, max: 2, step: 0.01, label: 'Brightness Drift' },
-    noiseAmount: { value: 0.3, min: 0, max: 2, step: 0.01, label: 'Noise' },
+    noiseAmount: { value: 2.0, min: 0, max: 2, step: 0.01, label: 'Noise' },
   });
 
   const controlsRef = useRef(controls);
@@ -341,6 +342,14 @@ export default function JpegFilter() {
     const fboB = fboBRef.current;
 
     if (!gl || !program || !canvas || !u || !fboA || !fboB) {
+      rafRef.current = requestAnimationFrame(render);
+      return;
+    }
+
+    // Skip when disabled — clear to transparent so page shows through
+    if (!controlsRef.current.enabled) {
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
       rafRef.current = requestAnimationFrame(render);
       return;
     }
