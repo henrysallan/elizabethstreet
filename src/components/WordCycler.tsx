@@ -8,11 +8,23 @@ const DEFAULT_TEXT = `a creative era used to be ten years. today, it is six mont
 
 const GRID_LEVELS = [1, 3, 4, 5, 6, 7, 8];
 
-// 300 WPM = 200ms per word. Ramp from slow to full speed over first 7 words.
-const START_DELAY = 600; // ms per word at the beginning
-const END_DELAY = 125;   // ms per word at full speed (300 WPM)
-const RAMP_WORDS = 12;    // number of words to ramp over
-const PAUSE_MS = 250;    // duration of a (pause) token
+// 5 progressive speed tiers (WPM). Text is split into 5 equal chunks.
+// Each chunk runs at the corresponding WPM.
+const CHUNK_WPM = [300, 360, 450, 600, 900];
+const NUM_CHUNKS = CHUNK_WPM.length;
+// Convert WPM → ms per word: 60000 / WPM
+const CHUNK_MS = CHUNK_WPM.map((wpm) => Math.round(60000 / wpm));
+// Pause durations also get shorter per chunk
+const CHUNK_PAUSE = [930, 750, 550, 380, 250];
+// Sentence-end pause durations per tier (shorter than explicit pauses)
+const CHUNK_SENTENCE_PAUSE = [500, 400, 300, 200, 140];
+const RAMP_WORDS = 7; // ramp-up over first N words of each chunk
+const RAMP_START = 600; // starting ms for the ramp
+
+/** Does a word end a sentence? (.  !  ?  — but not mid-word punctuation) */
+function isSentenceEnd(word: string) {
+  return /[.!?]+["'""'')*\]]*$/.test(word);
+}
 
 /** 1 char: highlight it. ≤4 chars: 2nd letter. Longer: 3rd letter. */
 function getHighlightIdx(word: string) {
@@ -28,9 +40,8 @@ export default function WordCycler() {
   const indexRef = useRef(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const { text, pauseLength } = useControls({
+  const { text } = useControls({
     text: { value: DEFAULT_TEXT, label: 'Text' },
-    pauseLength: { value: 930, min: 50, max: 2000, step: 10, label: 'Pause Length (ms)' },
   });
 
   const words = useMemo(() => {
@@ -79,34 +90,105 @@ export default function WordCycler() {
   const totalCells = gridSize * gridSize;
   const centerCell = Math.floor(totalCells / 2);
 
-  const displayTime = useCallback((i: number) => {
-    // Ramp from START_DELAY to END_DELAY over the first RAMP_WORDS words
-    if (i >= RAMP_WORDS) return END_DELAY;
-    const t = i / RAMP_WORDS; // 0 → 1
-    return START_DELAY + (END_DELAY - START_DELAY) * t;
-  }, []);
+  /**
+   * Build a map from word index → speed tier (0–4).
+   * Speed only changes at pause boundaries so we never shift mid-sentence.
+   * Segments (text between pauses) are distributed evenly across 5 tiers.
+   */
+  const tierMap = useMemo(() => {
+    // Identify segment boundaries: a new segment starts at index 0,
+    // after every (pause) token, and after every sentence-ending word.
+    const segStarts: number[] = [0];
+    for (let i = 0; i < words.length; i++) {
+      if (words[i] === '(pause)' && i + 1 < words.length) {
+        segStarts.push(i + 1);
+      } else if (isSentenceEnd(words[i]) && i + 1 < words.length && words[i + 1] !== '(pause)') {
+        // Sentence end that isn't already followed by a (pause)
+        segStarts.push(i + 1);
+      }
+    }
+    const numSegs = segStarts.length;
+    // Distribute segments as evenly as possible across NUM_CHUNKS tiers
+    const segsPerTier = numSegs / NUM_CHUNKS;
 
-  const pauseLengthRef = useRef(pauseLength);
-  pauseLengthRef.current = pauseLength;
+    // For each segment, figure out which tier it belongs to
+    const map = new Array<number>(words.length).fill(0);
+    for (let s = 0; s < numSegs; s++) {
+      const tier = Math.min(Math.floor(s / segsPerTier), NUM_CHUNKS - 1);
+      const start = segStarts[s];
+      const end = s + 1 < numSegs ? segStarts[s + 1] : words.length;
+      for (let j = start; j < end; j++) {
+        map[j] = tier;
+      }
+    }
+    return map;
+  }, [words]);
+
+  const displayTime = useCallback(
+    (i: number) => {
+      const wrappedIdx = ((i % words.length) + words.length) % words.length;
+      const tier = tierMap[wrappedIdx];
+      const target = CHUNK_MS[tier];
+      // Ramp only at the very start (first 7 real words of the whole text)
+      if (tier === 0) {
+        // Count real words before this index
+        let realCount = 0;
+        for (let j = 0; j < wrappedIdx; j++) {
+          if (words[j] !== '(pause)') realCount++;
+        }
+        if (realCount < RAMP_WORDS) {
+          const t = realCount / RAMP_WORDS;
+          return Math.round(RAMP_START + (target - RAMP_START) * t);
+        }
+      }
+      return target;
+    },
+    [tierMap, words],
+  );
+
+  const getPauseDuration = useCallback(
+    (i: number) => {
+      const wrappedIdx = ((i % words.length) + words.length) % words.length;
+      return CHUNK_PAUSE[tierMap[wrappedIdx]];
+    },
+    [tierMap, words],
+  );
+
+  const getSentencePauseDuration = useCallback(
+    (i: number) => {
+      const wrappedIdx = ((i % words.length) + words.length) % words.length;
+      return CHUNK_SENTENCE_PAUSE[tierMap[wrappedIdx]];
+    },
+    [tierMap, words],
+  );
 
   const step = useCallback(() => {
     // Peek ahead: if the next word is a (pause), skip the blank gap
     // and hold the current word on screen for the pause duration.
     const nextIdx = (indexRef.current + 1) % wordsRef.current.length;
     const nextWord = wordsRef.current[nextIdx];
+    const currentWord = wordsRef.current[indexRef.current];
 
     if (nextWord === '(pause)') {
       indexRef.current = nextIdx;
-      // Keep visible — no flash
-      timeoutRef.current = setTimeout(step, pauseLengthRef.current);
+      // Keep visible — no flash. Use chunk-aware pause duration.
+      timeoutRef.current = setTimeout(step, getPauseDuration(nextIdx));
       return;
     }
 
-    // Normal: swap word instantly, no blank gap
+    // Sentence-end: hold the current word briefly, then advance
+    if (currentWord !== '(pause)' && isSentenceEnd(currentWord)) {
+      indexRef.current = nextIdx;
+      setIndex(indexRef.current);
+      timeoutRef.current = setTimeout(step, getSentencePauseDuration(nextIdx));
+      return;
+    }
+
+    // Normal: swap word instantly
     indexRef.current = nextIdx;
     setIndex(indexRef.current);
     timeoutRef.current = setTimeout(step, displayTime(indexRef.current));
-  }, [displayTime]);
+  }, [displayTime, getPauseDuration, getSentencePauseDuration]);
 
   useEffect(() => {
     timeoutRef.current = setTimeout(step, displayTime(0));
