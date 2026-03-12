@@ -15,9 +15,9 @@ const NUM_CHUNKS = CHUNK_WPM.length;
 // Convert WPM → ms per word: 60000 / WPM
 const CHUNK_MS = CHUNK_WPM.map((wpm) => Math.round(60000 / wpm));
 // Pause durations also get shorter per chunk
-const CHUNK_PAUSE = [700, 550, 400, 280, 180];
+const CHUNK_PAUSE = [500, 380, 280, 190, 120];
 // Sentence-end pause durations per tier (shorter than explicit pauses)
-const CHUNK_SENTENCE_PAUSE = [380, 300, 220, 150, 100];
+const CHUNK_SENTENCE_PAUSE = [260, 200, 150, 100, 70];
 const RAMP_WORDS = 7; // ramp-up over first N words of each chunk
 const RAMP_START = 600; // starting ms for the ramp
 
